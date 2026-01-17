@@ -9,9 +9,12 @@ const lists = {
 const dialog = document.getElementById("task-dialog");
 const form = document.getElementById("task-form");
 const input = document.getElementById("task-input");
+const descInput = document.getElementById("task-desc");
 const dialogTitle = document.getElementById("dialog-title");
 const cancelBtn = document.getElementById("cancel-btn");
-const fileBtn = document.getElementById("file-btn");
+const openBtn = document.getElementById("open-btn");
+const createBtn = document.getElementById("create-btn");
+const saveBtn = document.getElementById("save-btn");
 const exportBtn = document.getElementById("export-btn");
 const fileStatus = document.getElementById("file-status");
 
@@ -24,7 +27,9 @@ let fileHandle = null;
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!ensureFileConnected()) return;
   const content = input.value.trim();
+  const description = descInput.value.trim();
   if (!content) {
     input.focus();
     return;
@@ -32,7 +37,7 @@ form.addEventListener("submit", async (event) => {
 
   if (editingTaskId) {
     tasks = tasks.map((task) =>
-      task.id === editingTaskId ? { ...task, content } : task
+      task.id === editingTaskId ? { ...task, content, description } : task
     );
   } else {
     const now = new Date().toISOString();
@@ -41,6 +46,7 @@ form.addEventListener("submit", async (event) => {
     tasks.unshift({
       id: crypto.randomUUID(),
       content,
+      description,
       status: currentStatus,
       completed: isDone,
       createdAt: now,
@@ -62,24 +68,64 @@ cancelBtn.addEventListener("click", () => {
 
 dialog.addEventListener("close", () => {
   input.value = "";
+  descInput.value = "";
   editingTaskId = null;
 });
 
 function openNewTaskDialog(status) {
+  if (!ensureFileConnected()) return;
   currentStatus = status;
   editingTaskId = null;
   dialogTitle.textContent = `新增 ${status.toUpperCase()}`;
   input.value = "";
+  descInput.value = "";
   dialog.showModal();
 }
 
-fileBtn.addEventListener("click", async () => {
+openBtn.addEventListener("click", async () => {
+  if (!window.showOpenFilePicker) {
+    alert("当前浏览器不支持文件系统 API");
+    return;
+  }
+  try {
+    const handles = await window.showOpenFilePicker({
+      types: [
+        {
+          description: "JSON 文件",
+          accept: { "application/json": [".json"] },
+        },
+      ],
+    });
+    if (!handles || handles.length === 0) return;
+    const handle = handles[0];
+    const fileTasks = normalizeTasks(await loadTasksFromFile(handle));
+    fileHandle = handle;
+    updateFileStatus();
+    tasks = fileTasks;
+    render();
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    if (error instanceof SyntaxError) {
+      alert("文件解析失败，未加载数据");
+      return;
+    }
+    if (error && error.message === "invalid-format") {
+      alert("文件格式不正确，未加载数据");
+      return;
+    }
+    console.warn("选择文件失败", error);
+  }
+});
+
+createBtn.addEventListener("click", async () => {
   if (!window.showSaveFilePicker) {
     alert("当前浏览器不支持文件系统 API");
     return;
   }
   try {
-    fileHandle = await window.showSaveFilePicker({
+    const handle = await window.showSaveFilePicker({
       suggestedName: "work-board.json",
       types: [
         {
@@ -88,17 +134,22 @@ fileBtn.addEventListener("click", async () => {
         },
       ],
     });
+    fileHandle = handle;
     updateFileStatus();
-    const fileTasks = normalizeTasks(await loadTasksFromFile());
-    if (fileTasks.length > 0) {
-      tasks = fileTasks;
-    } else if (tasks.length > 0) {
-      await persistTasks();
-    }
+    tasks = [];
+    await persistTasks();
     render();
   } catch (error) {
-    console.warn("选择文件失败", error);
+    if (error && error.name === "AbortError") {
+      return;
+    }
+    console.warn("创建文件失败", error);
   }
+});
+
+saveBtn.addEventListener("click", async () => {
+  if (!ensureFileConnected()) return;
+  await persistTasks();
 });
 
 exportBtn.addEventListener("click", async () => {
@@ -160,31 +211,21 @@ document.querySelectorAll(".column").forEach((column) => {
 });
 
 function loadTasks() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    return [];
-  }
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 async function persistTasks() {
-  if (fileHandle) {
-    const writable = await fileHandle.createWritable();
-    await writable.write(JSON.stringify(tasks, null, 2));
-    await writable.close();
-    return;
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+  if (!fileHandle) return;
+  const writable = await fileHandle.createWritable();
+  await writable.write(JSON.stringify(tasks, null, 2));
+  await writable.close();
 }
 
 function normalizeTasks(rawTasks) {
   if (!Array.isArray(rawTasks)) return [];
   return rawTasks.map((task) => ({
     ...task,
+    description: typeof task.description === "string" ? task.description : "",
     startedAt: task.startedAt ?? null,
     completedAt: task.completedAt ?? null,
     doingTotalMs: Number.isFinite(task.doingTotalMs) ? task.doingTotalMs : 0,
@@ -192,26 +233,38 @@ function normalizeTasks(rawTasks) {
   }));
 }
 
-async function loadTasksFromFile() {
-  if (!fileHandle) return [];
-  const file = await fileHandle.getFile();
+async function loadTasksFromFile(handle) {
+  if (!handle) return [];
+  const file = await handle.getFile();
   const text = await file.text();
   if (!text.trim()) return [];
   try {
-    const parsed = JSON.parse(text);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+    const normalized = text.replace(/^\uFEFF/, "");
+    const parsed = JSON.parse(normalized);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.tasks)) return parsed.tasks;
+    throw new Error("invalid-format");
+  } catch (error) {
+    if (error && error.message === "invalid-format") {
+      throw error;
+    }
+    throw new SyntaxError("parse-error");
   }
 }
 
 function updateFileStatus() {
   if (!fileStatus) return;
   if (!fileHandle) {
-    fileStatus.textContent = "未选择文件";
+    fileStatus.textContent = "未连接文件";
     return;
   }
   fileStatus.textContent = `已连接：${fileHandle.name}`;
+}
+
+function ensureFileConnected() {
+  if (fileHandle) return true;
+  alert("请先选择/创建保存文件");
+  return false;
 }
 
 function render() {
@@ -274,6 +327,10 @@ function render() {
     content.className = task.completed ? "task-content done" : "task-content";
     content.textContent = task.content;
 
+    const description = document.createElement("div");
+    description.className = "task-desc";
+    description.textContent = task.description;
+
     const deleteBtn = document.createElement("button");
     deleteBtn.type = "button";
     deleteBtn.className = "task-delete";
@@ -305,7 +362,11 @@ function render() {
     }
 
     header.append(toggle, content, deleteBtn);
-    card.append(header, meta);
+    if (task.description) {
+      card.append(header, description, meta);
+    } else {
+      card.append(header, meta);
+    }
     lists[task.status].appendChild(card);
 
     statusIndex[task.status] += 1;
@@ -313,16 +374,19 @@ function render() {
 }
 
 function editTask(id) {
+  if (!ensureFileConnected()) return;
   const target = tasks.find((task) => task.id === id);
   if (!target) return;
   editingTaskId = id;
   currentStatus = target.status;
   dialogTitle.textContent = `编辑 ${currentStatus.toUpperCase()}`;
   input.value = target.content;
+  descInput.value = target.description || "";
   dialog.showModal();
 }
 
 async function moveTaskToStatus(id, status) {
+  if (!ensureFileConnected()) return;
   const now = new Date().toISOString();
   tasks = tasks.map((task) => {
     if (task.id !== id) return task;
@@ -366,6 +430,7 @@ async function moveTaskToStatus(id, status) {
 }
 
 async function toggleTask(id) {
+  if (!ensureFileConnected()) return;
   const now = new Date().toISOString();
   tasks = tasks.map((task) => {
     if (task.id !== id) return task;
@@ -395,12 +460,14 @@ async function toggleTask(id) {
 }
 
 async function deleteTask(id) {
+  if (!ensureFileConnected()) return;
   tasks = tasks.filter((task) => task.id !== id);
   await persistTasks();
   render();
 }
 
 async function reorderTaskWithinStatus(dragId, targetId) {
+  if (!ensureFileConnected()) return;
   const dragTask = tasks.find((task) => task.id === dragId);
   const targetTask = tasks.find((task) => task.id === targetId);
   if (!dragTask || !targetTask || dragTask.status !== targetTask.status) {
@@ -514,6 +581,9 @@ function buildMarkdown() {
             task.doingTotalMs +
             (task.doingStartAt ? now - Date.parse(task.doingStartAt) : 0);
           lines.push(`- ${task.content}`);
+          if (task.description) {
+            lines.push(`  - 说明：${task.description}`);
+          }
           lines.push(`  - 总时间：${formatDuration(totalDoingMs)}`);
         });
       lines.push("");

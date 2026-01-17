@@ -39,7 +39,7 @@ body {
   color: #52606d;
 }
 
-#file-btn {
+#open-btn {
   border: none;
   background: #0f172a;
   color: white;
@@ -48,8 +48,34 @@ body {
   cursor: pointer;
 }
 
-#file-btn:hover {
+#open-btn:hover {
   background: #1e293b;
+}
+
+#create-btn {
+  border: none;
+  background: #334155;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#create-btn:hover {
+  background: #1f2937;
+}
+
+#save-btn {
+  border: none;
+  background: #2563eb;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+#save-btn:hover {
+  background: #1d4ed8;
 }
 
 #export-btn {
@@ -235,6 +261,15 @@ dialog::backdrop {
   border-radius: 8px;
   border: 1px solid #cbd5f5;
   resize: vertical;
+}
+
+.task-desc {
+  font-size: 13px;
+  color: #475569;
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 8px;
+  border: 1px dashed #e2e8f0;
 }
 
 .dialog-actions {
