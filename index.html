@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>工作记录看板</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-row">
+        <div>
+          <h1>工作记录看板</h1>
+          <p class="subtitle">用于记录 todo / doing / done 的轻量工具</p>
+        </div>
+        <div class="file-controls">
+          <button id="file-btn" type="button">选择保存文件</button>
+          <button id="export-btn" type="button">导出 Markdown</button>
+          <span id="file-status">未选择文件</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="board">
+      <section class="column" data-status="todo">
+        <div class="column-header">
+          <h2>Todo</h2>
+        </div>
+        <div class="task-list" id="todo-list"></div>
+      </section>
+
+      <section class="column" data-status="doing">
+        <div class="column-header">
+          <h2>Doing</h2>
+        </div>
+        <div class="task-list" id="doing-list"></div>
+      </section>
+
+      <section class="column" data-status="done">
+        <div class="column-header">
+          <h2>Done</h2>
+        </div>
+        <div class="task-list" id="done-list"></div>
+      </section>
+    </main>
+
+    <dialog id="task-dialog">
+      <form method="dialog" id="task-form">
+        <h3 id="dialog-title">新增任务</h3>
+        <label>
+          内容
+          <textarea id="task-input" rows="4"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-btn" class="secondary">取消</button>
+          <button value="confirm" class="primary">保存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
